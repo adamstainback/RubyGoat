@@ -2,11 +2,11 @@
 source "https://rubygems.org"
 
 #don't upgrade
-gem "rails", "5.1.6"
+gem "rails", "7.1.0"
 
 ruby "2.5.1"
 
-gem "aruba"
+gem "aruba", ">= 2.0.0"
 gem "bcrypt"
 gem "coffee-rails"
 gem "execjs"
@@ -34,7 +34,7 @@ gem "unicorn"
 # gem 'mailcatcher'
 
 group :development, :mysql do
-  gem "better_errors"
+  gem "better_errors", ">= 2.8.0"
   gem "binding_of_caller"
   gem "brakeman"
   gem "bundler-audit"
