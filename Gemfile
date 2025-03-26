@@ -2,7 +2,7 @@
 source "https://rubygems.org"
 
 #don't upgrade
-gem "rails", "5.1.6"
+gem "rails", "7.0.0"
 
 ruby "2.5.1"
 
@@ -21,7 +21,7 @@ gem "rails-perftest"
 gem "rake"
 gem "responders" #For Rails 4.2 # LOCKED DOWN
 gem "ruby-prof"
-gem "sass-rails"
+gem "sass-rails", ">= 6.0.0"
 gem "simplecov", require: false, group: :test
 gem "sqlite3"
 gem "therubyracer"
