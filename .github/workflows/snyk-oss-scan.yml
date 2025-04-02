@@ -14,27 +14,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f pip-sample/requirements.txt ]; then pip install -r pip-sample/requirements.txt; fi
-          if [ -f pipenv-sample/requirements.txt ]; then pip install -r pipenv-sample/requirements.txt; fi
-          if [ -f pipenv-sample/requirements.txt ]; then pip install -r pipenv-sample/requirements.txt; fi
-
       - name: Install Snyk CLI
         uses: snyk/actions/setup@master
-
-      - name: Debug working directory
-        run: |
-          echo "Current directory: $PWD"
-          echo "Files in repo:"
-          find . -type f
 
       - name: Run Snyk OSS scan
         run: |
@@ -47,7 +28,6 @@ jobs:
           node <<'EOF'
           const fs = require('fs');
           const path = require('path');
-          const { execSync } = require('child_process');
           const data = JSON.parse(fs.readFileSync('snyk-oss-results.json', 'utf8'));
           const severityRank = s => ({critical: 4, high: 3}[s] || 0);
           const severityIcons = { critical: '🔴', high: '🟠' };
@@ -55,12 +35,27 @@ jobs:
           const repoUrl = process.env.GITHUB_SERVER_URL + '/' + process.env.GITHUB_REPOSITORY;
           const branch = process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || 'main';
 
+          const ecosystemUrls = {
+            pip: name => `https://pypi.org/project/${name}/`,
+            npm: name => `https://www.npmjs.com/package/${name}`,
+            maven: name => `https://search.maven.org/search?q=${name}`,
+            rubygems: name => `https://rubygems.org/gems/${name}`,
+          };
+
+          const advisorUrls = {
+            pip: (name, version) => `https://security.snyk.io/package/pip/${name}/${version}`,
+            npm: (name, version) => `https://security.snyk.io/package/npm/${name}/${version}`,
+            maven: (name, version) => `https://security.snyk.io/package/maven/${name}/${version}`,
+            rubygems: (name, version) => '', // Advisor not supported
+          };
+
           const projects = Array.isArray(data) ? data : [data];
 
           for (const project of projects) {
             const manifest = project.displayTargetFile || project.targetFile || project.projectName || 'unknown';
             for (const vuln of project.vulnerabilities || []) {
               if (!['critical', 'high'].includes(vuln.severity)) continue;
+              vuln.ecosystem = project.packageManager || 'pip';
               manifestGroups[manifest] = manifestGroups[manifest] || [];
               manifestGroups[manifest].push(vuln);
             }
@@ -68,8 +63,6 @@ jobs:
 
           let output = '<!-- SNYK_OSS_SUMMARY -->\n';
           output += '## <img src="https://cdn.brandfetch.io/id8lDQ6AMj/idG0kOimA5.svg?c=1dxbfHSJFAPEGdCLU4o5B" alt="Snyk" height="44" /> Snyk OSS Vulnerabilities by Manifest\n\n';
-
-          const prComments = [];
 
           for (const file in manifestGroups) {
             const vulns = manifestGroups[file].sort((a, b) => severityRank(b.severity) - severityRank(a.severity));
@@ -115,8 +108,12 @@ jobs:
             for (const [key, { vuln, count, titles, severity }] of vulnMap.entries()) {
               const icon = severityIcons[severity] || '';
               const snykUrl = vuln.id ? `https://security.snyk.io/vuln/${vuln.id}` : '';
-              const pkgUrl = `https://pypi.org/project/${vuln.packageName}/${vuln.version}/`;
-              const advisorUrl = `https://security.snyk.io/package/pip/${vuln.packageName}/${vuln.version}`;
+              const ecosystem = vuln.ecosystem || 'pip';
+              const pkgBaseUrl = ecosystemUrls[ecosystem] || (name => '#');
+              const advisorBaseUrl = advisorUrls[ecosystem] || (() => '');
+
+              const pkgUrl = `${pkgBaseUrl(vuln.packageName)}`;
+              const advisorUrl = advisorBaseUrl(vuln.packageName, vuln.version);
               const fix = vuln.fixedIn?.[0] || 'N/A';
               const title = [...titles][0];
 
@@ -126,17 +123,7 @@ jobs:
               const isTransitive = vuln.from?.length > 2;
               const type = isTransitive ? 'Transitive' : 'Direct';
 
-              output += `| ${icon} ${severity.toUpperCase()} | [${vuln.packageName}@${vuln.version}](${pkgUrl}) | ${type} | ${score} | ${count} | [${title}](${snykUrl}) | ${fix} | [View](${advisorUrl}) |\n`;
-
-              // Try inline comment if manifest file is touched
-              try {
-                const grepResult = execSync(`git diff -U0 origin/${branch} -- ${file} | grep -n '${vuln.packageName}' || true`).toString();
-                if (grepResult) {
-                  const line = grepResult.split(':')[0];
-                  const message = `\u26a0\ufe0f **${vuln.packageName}@${vuln.version}** is vulnerable: ${title}. Fix available: ${fix}. [Details](${snykUrl})`;
-                  prComments.push({ file, line, message });
-                }
-              } catch (e) {}
+              output += `| ${icon} ${severity.toUpperCase()} | [${vuln.packageName}@${vuln.version}](${pkgUrl}) | ${type} | ${score} | ${count} | [${title}](${snykUrl}) | ${fix} | ${advisorUrl ? `[View](${advisorUrl})` : 'N/A'} |\n`;
             }
 
             output += '\n';
@@ -147,12 +134,11 @@ jobs:
           }
 
           output += '\n---\n';
-          output += `### \u2139\ufe0f Summary Notes\n`;
+          output += `### ℹ️ Summary Notes\n`;
           output += '- **Dependency Type** is based on the path from your manifest to the vulnerable package (via Snyk’s `from[]` chain).  \n';
           output += `- **Occurrences**: Number of separate dependency paths that lead to the same vulnerable package/version.\n`;
 
           fs.writeFileSync('pr-comment.md', output);
-          fs.writeFileSync('inline-comments.json', JSON.stringify(prComments, null, 2));
           EOF
 
       - name: Add summary to PR Checks tab
@@ -170,18 +156,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-
-      - name: Comment inline on vulnerable lines
-        if: github.event_name == 'pull_request'
-        run: |
-          COMMENTS=$(cat inline-comments.json)
-          echo "$COMMENTS" | jq -c '.[]' | while read -r comment; do
-            FILE=$(echo "$comment" | jq -r '.file')
-            LINE=$(echo "$comment" | jq -r '.line')
-            MESSAGE=$(echo "$comment" | jq -r '.message')
-            gh pr comment "$PR_URL" --body "$MESSAGE" --repo "$GITHUB_REPOSITORY" --path "$FILE" --line "$LINE"
-          done
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
