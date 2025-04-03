@@ -24,6 +24,8 @@ $ git clone git@github.com:OWASP/railsgoat.git
 $ cd railsgoat
 $ git checkout rails_3_2
 $ git checkout rails_4_2
+.
+asd
 ```
 
 Navigate into the directory (already there if you followed the previous step) and install the dependencies:
