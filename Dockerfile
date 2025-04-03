@@ -1,9 +1,11 @@
-FROM ruby:2.5.1
-RUN apt-get update -qq && apt-get install -y build-essential libpq-dev nodejs
-RUN mkdir /myapp
-WORKDIR /myapp
-ADD Gemfile /myapp/Gemfile
-ADD Gemfile.lock /myapp/Gemfile.lock
-RUN bundle install
-ADD . /myapp
+# Use the official Snyk image with Node.js installed
+FROM snyk/snyk:node-20
 
+# Set the working directory inside the container
+WORKDIR /app
+
+# Copy the Node.js report script into the container
+COPY snyk-oss-report.js .
+
+# Set the default entrypoint (so the container runs bash)
+ENTRYPOINT ["bash", "-c"]
