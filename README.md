@@ -27,7 +27,7 @@ $ git checkout rails_4_2
 .
 asd
 ```
-
+.
 Navigate into the directory (already there if you followed the previous step) and install the dependencies:
 
 ```bash
